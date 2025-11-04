@@ -63,6 +63,7 @@ def send_welcome(message):
         message.chat.id,
         f"""<b>مرحباً بك {first_name}!</b> 👋
         أنا بوت التحميل الشامل. اختر المنصة التي تريد التحميل منها:
+        * يدعم الآن **التحميل المُجدوَل** (أرسل عدة روابط دفعة واحدة!).
         * اختر من القائمة أدناه وأرسل <b>الرابط فوراً</b>.
         """,
         parse_mode='HTML', 
@@ -85,13 +86,14 @@ def handle_download_choice(call):
     bot.register_next_step_handler(call.message, process_user_link)
 
 # ===============================================
-#              3. معالجة التحميل المجدول (بدون تغيير)
+#              3. معالجة التحميل المجدول
 # ===============================================
 
 def schedule_bulk_downloads(chat_id, link_data):
     """دالة تعمل في خيط منفصل لمعالجة قائمة الروابط وإرسال تقرير نهائي."""
     results = {'success': 0, 'failed': 0, 'platforms': set()}
     
+    # ⚠️ ملاحظة: يمكن أن تحدث هذه الرسالة خطأ لأن رسالة "قيد التحميل" سيتم حذفها بواسطة دالة التحميل
     loading_msg = bot.send_message(chat_id, "<strong>⏳ بدء معالجة قائمة التحميل المُجدوَل...</strong>", parse_mode="html")
     
     for link_id, data in link_data.items():
@@ -100,7 +102,7 @@ def schedule_bulk_downloads(chat_id, link_data):
         download_as_mp3 = data['download_as_mp3']
 
         try:
-            # 🚨 استدعاء دالة التحميل من الملف الخارجي
+            # 🚨 استدعاء دالة التحميل من الملف الخارجي (ستحذف loading_msg)
             download_media_yt_dlp(
                 bot, chat_id, url, platform_name, loading_msg.message_id, download_as_mp3=download_as_mp3
             )
@@ -111,8 +113,12 @@ def schedule_bulk_downloads(chat_id, link_data):
             print(f"❌ فشل تحميل {url}: {e}")
             results['failed'] += 1
             
-    bot.delete_message(chat_id, loading_msg.message_id) 
-    
+    try:
+        # محاولة حذف آخر رسالة "جارٍ التحميل" قبل إرسال التقرير
+        bot.delete_message(chat_id, loading_msg.message_id) 
+    except:
+        pass # قد تكون الرسالة محذوفة بالفعل
+
     report_text = f"**تقرير التحميل المُجدوَل ✅**\n\n"
     report_text += f"▪️ تم بنجاح: {results['success']} ملف\n"
     report_text += f"▪️ فشلت: {results['failed']} ملف\n"
@@ -144,11 +150,11 @@ def process_user_link(message):
 
     # 3. معالجة التحميل المجمّع
     if len(all_links) > 1:
-        # ... (باقي كود التحميل المجدول يبقى كما هو)
         links_to_schedule = {}
         platforms_detected = set()
         
         for i, url in enumerate(all_links):
+            # تحديد المنصة هنا للجدولة
             if re.match(r'https?://(?:www\.)?(?:tiktok\.com|vt\.tiktok\.com|vm\.tiktok\.com)/', url):
                 platform_key = 'tiktok'
                 platform_name = 'تيك توك'
@@ -184,7 +190,7 @@ def process_user_link(message):
 
     # 4. معالجة التحميل الفردي (رابط واحد فقط)
     user_url = all_links[0]
-    # (هنا يجب أن تضمن أن platform_key يتم تحديده بشكل صحيح للروابط الفردية إذا لم يكن مُمرراً من القائمة)
+    
     if not platform_key:
         if re.match(r'https?://(?:www\.)?(?:tiktok\.com|vt\.tiktok\.com|vm\.tiktok\.com)/', user_url):
             platform_key = 'tiktok'
@@ -212,15 +218,18 @@ def process_user_link(message):
             markup = types.InlineKeyboardMarkup()
             vid_btn = types.InlineKeyboardButton("تحميل فيديو 🎥", callback_data=f"final_dl_{platform_key}_video_{message_id_key}")
             aud_btn = types.InlineKeyboardButton("تحويل إلى صوت 🎧 (MP3)", callback_data=f"final_dl_{platform_key}_audio_{message_id_key}")
-            clip_btn = types.InlineKeyboardButton("قص الفيديو ✂️", callback_data=f"final_dl_{platform_key}_clip_{message_id_key}") # 🚨 زر القص
+            # ⚠️ زر القص معطل مؤقتاً لتجنب انهيار البوت بسبب نقص ffmpeg
+            # clip_btn = types.InlineKeyboardButton("قص الفيديو ✂️", callback_data=f"final_dl_{platform_key}_clip_{message_id_key}") 
             
-            markup.add(vid_btn, aud_btn, clip_btn)
+            # markup.add(vid_btn, aud_btn, clip_btn) 
+            markup.add(vid_btn, aud_btn) 
             
             bot.send_message(message.chat.id, f"✅ تم التعرف على رابط {platform_name}. الرجاء اختيار طريقة التحميل:", reply_markup=markup, parse_mode='HTML')
             return
             
         # 6. بدء عملية التحميل المباشر لـ تيك توك وإنستجرام (فيديو فقط)
-        loading_msg = bot.send_message(message.chat.id, f"<strong>⏳ جارٍ التحميل المباشر من {platform_name} (فيديو)...</strong>", parse_mode="html")
+        # 🚨 نعتمد هنا على أن دالة download_media_yt_dlp ستجرب التحميل السريع أولاً
+        loading_msg = bot.send_message(message.chat.id, f"<strong>⏳ جارٍ التحميل السريع/المباشر من {platform_name} (فيديو)...</strong>", parse_mode="html")
         
         download_media_yt_dlp(bot, message.chat.id, user_url, platform_name, loading_msg.message_id, download_as_mp3=False)
             
@@ -240,7 +249,7 @@ def process_user_link(message):
         bot.send_message(message.chat.id, "اضغط على الأمر /start للعودة إلى القائمة الرئيسية.", parse_mode='HTML')
 
 # ===============================================
-#              5. معالجة التحميل النهائي (MP3/فيديو/قص)
+#              5. معالجة التحميل النهائي (MP3/فيديو)
 # ===============================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('final_dl_'))
@@ -251,7 +260,7 @@ def handle_final_download(call):
     message_id_key = parts[4] 
     
     links = load_links()
-    user_url = links.get(message_id_key) # 🚨 نستخدم get وليس pop هنا للحفاظ على الرابط لعملية القص
+    user_url = links.get(message_id_key) 
     
     if not user_url:
         bot.answer_callback_query(call.id, "❌ انتهت صلاحية هذا الرابط أو تم تحميله مسبقاً.")
@@ -266,19 +275,10 @@ def handle_final_download(call):
     platforms = {'youtube': 'يوتيوب'}
     platform_name = platforms[platform_key]
     
+    # ⚠️ جزء القص معطل مؤقتاً
     if media_type == 'clip':
-        # 🚨 بدء عملية طلب وقت القص
-        bot.answer_callback_query(call.id, "يرجى إرسال وقت القص الآن.")
-        
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"✂️ **يرجى إرسال فترة القص بالصيغة:** <code>(البداية-النهاية)</code>\n\nمثال: <code>0:15 - 0:45</code> أو <code>90-120</code> (بالثواني).",
-            parse_mode='HTML'
-        )
-        call.message.url_to_clip = user_url
-        bot.register_next_step_handler(call.message, process_clip_time)
-        return
+        bot.answer_callback_query(call.id, "⚠️ ميزة القص معطلة مؤقتاً للصيانة. يرجى اختيار تحميل الفيديو كاملاً.")
+        return # نوقف التنفيذ
         
     # إذا لم يكن قص، نحذف الرابط ونقوم بالتحميل
     user_url = links.pop(message_id_key) 
@@ -304,7 +304,6 @@ def handle_final_download(call):
         )
         
     except Exception as e:
-        # ... (معالجة الأخطاء تبقى كما هي)
         print(f"=====================================================")
         print(f"❌ خطأ حرج في التحميل النهائي {platform_name}: {e}") 
         print(f"=====================================================")
@@ -315,70 +314,12 @@ def handle_final_download(call):
     finally:
         bot.send_message(call.message.chat.id, "اضغط على الأمر /start للعودة إلى القائمة الرئيسية.", parse_mode='HTML')
 
+
 # ===============================================
-#              6. معالجة وقت القص (جديد)
+#              6. معالجة وقت القص (معطلة)
 # ===============================================
 
-def process_clip_time(message):
-    clip_time_text = message.text
-    user_url = getattr(message, 'url_to_clip', None)
-    
-    if not user_url:
-        bot.send_message(message.chat.id, "❌ انتهت صلاحية الجلسة. اضغط /start.", parse_mode='HTML')
-        return
-
-    # تحليل المدة الزمنية (مثال: 0:15 - 0:45)
-    match = re.match(r'\s*([\d:.]+)\s*-\s*([\d:.]+)\s*', clip_time_text)
-    
-    if not match:
-        bot.send_message(message.chat.id, "❌ صيغة الوقت غير صحيحة. يرجى استخدام الصيغة: <code>البداية - النهاية</code>.", parse_mode='HTML')
-        return bot.register_next_step_handler(message, process_clip_time)
-
-    start_time = match.group(1)
-    end_time = match.group(2)
-    
-    # حذف الرابط من المخزن بعد الحصول على وقت القص
-    links = load_links()
-    
-    # البحث عن المفتاح المرتبط بالرابط وحذفه (لأننا لم نحذفه في الدالة السابقة)
-    message_id_key = None
-    for key, url in links.items():
-        if url == user_url:
-            message_id_key = key
-            break
-            
-    if message_id_key:
-        links.pop(message_id_key)
-        save_links(links)
-    
-    try:
-        loading_msg = bot.send_message(message.chat.id, f"<strong>⏳ جارٍ تنزيل وقص الفيديو ({start_time} - {end_time})...</strong>", parse_mode="html")
-
-        # 🚨 استدعاء دالة التحميل مع أوقات القص
-        download_media_yt_dlp(
-            bot, 
-            message.chat.id, 
-            user_url, 
-            'يوتيوب (مقصود)', 
-            loading_msg.message_id, 
-            clip_times=(start_time, end_time)
-        )
-        
-    except Exception as e:
-        print(f"=====================================================")
-        print(f"❌ خطأ حرج في عملية القص: {e}") 
-        print(f"=====================================================")
-        
-        if loading_msg:
-             try: bot.delete_message(message.chat.id, loading_msg.message_id) 
-             except: pass 
-        
-        error_msg = str(e).split('\n')[0] 
-        bot.send_message(message.chat.id, f"❌ حدث خطأ أثناء قص الفيديو: <b>{error_msg}</b>", parse_mode='HTML')
-        
-    finally:
-        bot.send_message(message.chat.id, "اضغط على الأمر /start للعودة إلى القائمة الرئيسية.", parse_mode='HTML')
-
+# تم تعطيل هذه الدالة مؤقتاً لتجنب مشاكل moviepy/ffmpeg
 
 # ===============================================
 #              7. تهيئة Webhook
@@ -388,4 +329,3 @@ if __name__ == '__main__':
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
     print('✅ البوت جاهز للتشغيل بواسطة Gunicorn...')
-                      
