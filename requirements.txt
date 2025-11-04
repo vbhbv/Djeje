@@ -1,0 +1,6 @@
+pytelegrambotapi
+Flask
+gunicorn 
+yt-dlp
+moviepy 
+Pillow 
