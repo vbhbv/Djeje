@@ -3,4 +3,3 @@ flask
 requests
 gunicorn
 yt-dlp
-ffmpeg-python
