@@ -1,4 +1,6 @@
 pytelegrambotapi
-Flask
-gunicorn 
+flask
+requests
+gunicorn
 yt-dlp
+ffmpeg-python
