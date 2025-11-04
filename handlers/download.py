@@ -4,7 +4,6 @@ import yt_dlp
 import json
 import re
 import math
-from moviepy.editor import VideoFileClip, AudioFileClip # 🚨 مكتبة MoviePy للقص والدمج
 
 # ===============================================
 #              0. دوال التخزين الدائم (Persistent Storage)
