@@ -1,6 +1,0 @@
-pytube 
-yt-dlp
-Flask
-gunicorn
-moviepy
-Pillow 
